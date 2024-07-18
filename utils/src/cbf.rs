@@ -20,7 +20,6 @@ pub fn write<W: Write>(writer: &mut W, entries: &[FileEntry]) -> io::Result<()> 
     Ok(())
 }
 
-/// Reads file entries from a reader in the custom binary format.
 pub fn read<R: Read>(reader: &mut R) -> io::Result<Vec<FileEntry>> {
     let mut entries = Vec::new();
     while let Ok(file_size_bytes) = read_n_bytes(reader, 4) {
