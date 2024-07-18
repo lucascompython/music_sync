@@ -315,10 +315,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cbf"
-version = "0.1.0"
-
-[[package]]
 name = "cc"
 version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -934,8 +930,8 @@ name = "server"
 version = "0.1.0"
 dependencies = [
  "actix-web",
- "cbf",
  "lz4_flex",
+ "utils",
  "zstd",
 ]
 
@@ -1128,6 +1124,10 @@ dependencies = [
  "idna",
  "percent-encoding",
 ]
+
+[[package]]
+name = "utils"
+version = "0.1.0"
 
 [[package]]
 name = "version_check"

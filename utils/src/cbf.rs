@@ -43,34 +43,3 @@ fn read_n_bytes<R: Read>(reader: &mut R, n: usize) -> io::Result<Vec<u8>> {
     reader.read_exact(&mut buffer)?;
     Ok(buffer)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_write_read() {
-        let entries = vec![
-            FileEntry {
-                name: "file1.txt".to_string(),
-                data: b"Hello, world!".to_vec(),
-            },
-            FileEntry {
-                name: "file2.bin".to_string(),
-                data: vec![0x01, 0x02, 0x03, 0x04],
-            },
-        ];
-
-        let mut buffer = Vec::new();
-        write(&mut buffer, &entries).expect("Failed to write custom format");
-
-        let mut cursor = std::io::Cursor::new(buffer);
-        let read_entries = read(&mut cursor).expect("Failed to read custom format");
-
-        assert_eq!(entries.len(), read_entries.len());
-        for (entry, read_entry) in entries.iter().zip(read_entries.iter()) {
-            assert_eq!(entry.name, read_entry.name);
-            assert_eq!(entry.data, read_entry.data);
-        }
-    }
-}

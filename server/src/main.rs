@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::sync::RwLock;
 
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
+use utils::cbf;
 
 fn get_file_names_and_get_cbf() -> io::Result<(Vec<String>, Vec<u8>)> {
     let path = fs::read_dir("music")?;
@@ -40,25 +41,7 @@ async fn compare(files: web::Data<Arc<RwLock<Vec<String>>>>, req_body: String) -
         return HttpResponse::BadRequest().body("No files provided");
     }
 
-    let incoming_files: Vec<&str> = req_body.split("|").collect();
-    let incoming_files_len = incoming_files.len();
-
-    let mut missing = Vec::new();
-
-    for (i, file) in files.iter().enumerate() {
-        if i >= incoming_files_len {
-            missing.push(file);
-            continue;
-        }
-
-        unsafe {
-            if file != incoming_files.get_unchecked(i) {
-                missing.push(file);
-            }
-        }
-    }
-
-    HttpResponse::Ok().body(req_body)
+    HttpResponse::Ok().body("test")
 }
 
 #[actix_web::main]

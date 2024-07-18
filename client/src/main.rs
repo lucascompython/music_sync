@@ -1,4 +1,5 @@
 use std::{fs, io::Read};
+use utils::cbf;
 
 fn main() {
     println!("Unpacking files...");

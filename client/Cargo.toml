@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 reqwest = "0.12.5"
-cbf = { path = "../cbf" }
+utils = { path = "../utils" }
 
 [profile.release]
 panic = "abort"
