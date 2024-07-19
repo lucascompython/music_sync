@@ -59,6 +59,8 @@ async fn compare(state: web::Data<Arc<RwLock<AppState>>>, req_body: String) -> i
     let missing: HashSet<&String> = incoming_files.difference(&files).collect(); // files that are in the client's request but not in the server's files
     let extra: HashSet<&String> = files.difference(&incoming_files).collect(); // files that are in the server's files but not in the client's request
 
+    println!("Missing files: {:?}\nExtra files: {:?}", &missing, &extra);
+
     if !extra.is_empty() {
         let extra_files: Vec<&cbf::FileEntry> = state
             .file_entries
@@ -73,8 +75,13 @@ async fn compare(state: web::Data<Arc<RwLock<AppState>>>, req_body: String) -> i
             .content_type("application/octet-stream")
             .body(buffer);
     }
+    if !missing.is_empty() {
+        let response = utils::join_hashset(&missing, '|');
 
-    HttpResponse::Ok().body("yeah")
+        return HttpResponse::Ok().body(response);
+    }
+
+    HttpResponse::Ok().body("synced")
 }
 
 #[actix_web::main]

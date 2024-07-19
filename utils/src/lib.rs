@@ -1,5 +1,33 @@
+use std::collections::HashSet;
+
 pub mod cbf;
 pub mod split_strings;
+
+pub fn join_hashset(set: &HashSet<&String>, separator: char) -> String {
+    let num_elements = set.len();
+    if num_elements == 0 {
+        return String::new();
+    }
+
+    let separator_len = 1;
+    let total_length: usize =
+        set.iter().map(|s| s.len()).sum::<usize>() + (num_elements - 1) * separator_len;
+
+    let mut joined = String::with_capacity(total_length);
+
+    let mut set_iter = set.iter();
+
+    if let Some(first) = set_iter.next() {
+        joined.push_str(first);
+    }
+
+    for item in set_iter {
+        joined.push(separator);
+        joined.push_str(item);
+    }
+
+    joined
+}
 
 #[cfg(test)]
 mod tests {
