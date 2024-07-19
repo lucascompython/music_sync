@@ -1,22 +1,28 @@
+use std::collections::HashSet;
 use std::fs;
 use std::io;
-use std::io::Write;
 use std::sync::Arc;
 use std::sync::RwLock;
 
-use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
+use actix_web::{get, web, App, HttpResponse, HttpServer, Responder};
 use utils::cbf;
+use utils::split_strings::SplitStrings;
 
-fn get_file_names_and_get_cbf() -> io::Result<(Vec<String>, Vec<u8>)> {
-    let path = fs::read_dir("music")?;
+fn get_file_names_and_get_cbf() -> io::Result<(HashSet<String>, Vec<u8>)> {
+    let path = if let Ok(path) = fs::read_dir("music") {
+        path
+    } else {
+        fs::create_dir("music")?;
+        fs::read_dir("music")?
+    };
 
     let mut entries = Vec::new();
-    let mut file_names = Vec::new();
+    let mut file_names = HashSet::new();
     for path in path {
         let path = path?.path();
         let file_name = path.file_name().unwrap().to_str().unwrap().to_string();
 
-        file_names.push(file_name.clone());
+        file_names.insert(file_name.clone());
 
         let data = fs::read(path)?;
         entries.push(cbf::FileEntry {
@@ -33,7 +39,10 @@ fn get_file_names_and_get_cbf() -> io::Result<(Vec<String>, Vec<u8>)> {
 }
 
 #[get("/compare")]
-async fn compare(files: web::Data<Arc<RwLock<Vec<String>>>>, req_body: String) -> impl Responder {
+async fn compare(
+    files: web::Data<Arc<RwLock<HashSet<String>>>>,
+    req_body: String,
+) -> impl Responder {
     let files = files.read().unwrap();
     println!("{:?}", files);
 
@@ -41,7 +50,28 @@ async fn compare(files: web::Data<Arc<RwLock<Vec<String>>>>, req_body: String) -
         return HttpResponse::BadRequest().body("No files provided");
     }
 
-    HttpResponse::Ok().body("test")
+    let incoming_files: HashSet<String> = SplitStrings::new(&req_body, '|').collect();
+
+    let missing: HashSet<&String> = incoming_files.difference(&files).collect(); // files that are in the client's request but not in the server's files
+    let extra: HashSet<&String> = files.difference(&incoming_files).collect(); // files that are in the server's files but not in the client's request
+
+    let mut response = String::new();
+
+    if !missing.is_empty() {
+        response.push_str("Missing files:\n");
+        for file in &missing {
+            response.push_str(&format!("  {}\n", file));
+        }
+    }
+
+    if !extra.is_empty() {
+        response.push_str("Extra files:\n");
+        for file in &extra {
+            response.push_str(&format!("  {}\n", file));
+        }
+    }
+
+    HttpResponse::Ok().body(response)
 }
 
 #[actix_web::main]
