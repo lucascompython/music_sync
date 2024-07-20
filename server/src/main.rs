@@ -31,33 +31,24 @@ impl Config {
 
         let mut lines = buffer.lines();
 
-        let token = lines.next().unwrap().to_string();
-        let music_dir = lines.next().unwrap().to_string();
+        let token = lines.next().expect("Missing token").to_string();
+        let music_dir = lines.next().expect("Missing music_dir").to_string();
 
-        let config = Config { token, music_dir };
-
-        Ok(config)
+        Ok(Self { token, music_dir })
     }
 }
 
 fn validate_token(req: &HttpRequest, token_verifier: &TokenVerifier) -> bool {
     req.headers()
         .get("Authorization")
-        .map_or(false, |header_value| {
-            header_value
-                .to_str()
-                .ok()
-                .and_then(|token| {
-                    token_verifier.decrypt(token).and_then(|decrypted_token| {
-                        if token_verifier.verify(&decrypted_token) {
-                            Some(true)
-                        } else {
-                            None
-                        }
-                    })
-                })
-                .unwrap_or(false)
+        .and_then(|header_value| {
+            header_value.to_str().ok().and_then(|token| {
+                token_verifier
+                    .decrypt(token)
+                    .filter(|decrypted_token| token_verifier.verify(decrypted_token))
+            })
         })
+        .is_some()
 }
 
 #[get("/sync")]
@@ -73,18 +64,7 @@ async fn sync_get(
     }
 
     let files = &state.file_names;
-
-    if req_body.is_empty() {
-        let mut buffer = Vec::new();
-        cbf::write(&mut buffer, &state.file_entries, None::<&HashSet<String>>).unwrap();
-
-        return HttpResponse::Ok()
-            .content_type("application/octet-stream")
-            .body(buffer);
-    }
-
     let incoming_files: HashSet<String> = SplitStrings::new(&req_body, '|').collect();
-
     let missing: HashSet<&String> = incoming_files.difference(files).collect(); // files that are in the client's request but not in the server's files
     let extra: HashSet<&String> = files.difference(&incoming_files).collect(); // files that are in the server's files but not in the client's request
 

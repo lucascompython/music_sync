@@ -12,7 +12,7 @@ struct Config {
 }
 
 impl Config {
-    fn new() -> io::Result<Config> {
+    fn new() -> io::Result<Self> {
         let mut file = if let Ok(file) = fs::File::open("config.conf") {
             file
         } else {
@@ -29,17 +29,11 @@ impl Config {
 
         let mut lines = buffer.lines();
 
-        let server_url = lines.next().unwrap().to_string();
-        let token = lines.next().unwrap().to_string();
-        let music_dir = lines.next().unwrap().to_string();
-
-        let config = Config {
-            server_url,
-            token,
-            music_dir,
-        };
-
-        Ok(config)
+        Ok(Self {
+            server_url: lines.next().unwrap().to_string(),
+            token: lines.next().unwrap().to_string(),
+            music_dir: lines.next().unwrap().to_string(),
+        })
     }
 }
 
@@ -57,7 +51,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .get(format!("{}/sync", config.server_url))
         .header("Authorization", &encrypted_token)
         .body(utils::join_hashset(&file_names, '|'))
-        .send()?;
+        .send();
+
+    let response = match response {
+        Ok(response) => response,
+        Err(err) => {
+            eprintln!("Failed to sync files: {}", err);
+            return Ok(());
+        }
+    };
 
     if response.status().is_success() {
         let content_type = response.headers().get("content-type");
@@ -78,26 +80,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
 
                 if !missing_files.is_empty() {
-                    let mut buffer = Vec::new();
-                    let missing_files: Vec<&cbf::FileEntry> = file_entries
-                        .iter()
-                        .filter(|entry| missing_files.contains(&entry.name))
-                        .collect();
-                    cbf::write(&mut buffer, &missing_files, None::<&HashSet<String>>)?;
-
-                    let response = client
-                        .post(format!("{}/sync", config.server_url))
-                        .header("Authorization", &encrypted_token)
-                        .body(buffer)
-                        .send()?;
-
-                    if response.status().is_success() {
-                        if response.text()? == "synced" {
-                            println!("Synced missing files!");
-                        } else {
-                            eprintln!("Failed to sync missing files!");
-                        }
-                    }
+                    sync_missing_files(
+                        &client,
+                        &config,
+                        &encrypted_token,
+                        &file_entries,
+                        &missing_files,
+                    )?;
                 }
             }
             None => {
@@ -114,27 +103,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                         println!("The server is missing {} files", missing_files_names.len());
 
-                        let missing_files: Vec<&cbf::FileEntry> = file_entries
-                            .iter()
-                            .filter(|entry| missing_files_names.contains(&entry.name))
-                            .collect();
-
-                        let mut buffer = Vec::new();
-                        cbf::write(&mut buffer, &missing_files, None::<&HashSet<String>>)?;
-
-                        let response = client
-                            .post(format!("{}/sync", config.server_url))
-                            .header("Authorization", &encrypted_token)
-                            .body(buffer)
-                            .send()?;
-
-                        if response.status().is_success() {
-                            if response.text()? == "synced" {
-                                println!("Synced missing files!");
-                            } else {
-                                eprintln!("Failed to sync missing files!");
-                            }
-                        }
+                        sync_missing_files(
+                            &client,
+                            &config,
+                            &encrypted_token,
+                            &file_entries,
+                            &missing_files_names,
+                        )?;
                     }
                 }
             }
@@ -143,5 +118,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("Failed to sync files!");
     }
 
+    Ok(())
+}
+
+fn sync_missing_files(
+    client: &reqwest::blocking::Client,
+    config: &Config,
+    encrypted_token: &str,
+    file_entries: &[cbf::FileEntry],
+    missing_files: &HashSet<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let missing_files: Vec<&cbf::FileEntry> = file_entries
+        .iter()
+        .filter(|entry| missing_files.contains(&entry.name))
+        .collect();
+    let mut buffer = Vec::new();
+    cbf::write(&mut buffer, &missing_files, None::<&HashSet<String>>)?;
+    let response = client
+        .post(format!("{}/sync", config.server_url))
+        .header("Authorization", encrypted_token)
+        .body(buffer)
+        .send()?;
+    if response.status().is_success() && response.text()? == "synced" {
+        println!("Synced missing files!");
+    } else {
+        eprintln!("Failed to sync missing files!");
+    }
     Ok(())
 }

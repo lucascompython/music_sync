@@ -51,8 +51,8 @@ where
     Ok(())
 }
 
-pub fn read<R: Read>(reader: &mut R) -> io::Result<(Vec<String>, Vec<FileEntry>)> {
-    let mut missing_files = Vec::new();
+pub fn read<R: Read>(reader: &mut R) -> io::Result<(HashSet<String>, Vec<FileEntry>)> {
+    let mut missing_files = HashSet::new();
     let missing_files_count = u16::from_le_bytes(read_n_bytes(reader, 2)?.try_into().unwrap());
 
     for _ in 0..missing_files_count {
@@ -60,7 +60,7 @@ pub fn read<R: Read>(reader: &mut R) -> io::Result<(Vec<String>, Vec<FileEntry>)
         let name_bytes = read_n_bytes(reader, name_length)?;
         let name = String::from_utf8(name_bytes)
             .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid UTF-8"))?;
-        missing_files.push(name);
+        missing_files.insert(name);
     }
 
     let mut entries = Vec::new();
