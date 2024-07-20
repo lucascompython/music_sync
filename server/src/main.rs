@@ -11,6 +11,34 @@ use utils::split_strings::SplitStrings;
 struct AppState {
     file_names: HashSet<String>,
     file_entries: Vec<cbf::FileEntry>,
+    config: Config,
+}
+
+struct Config {
+    token: String,
+    music_dir: String,
+}
+
+impl Config {
+    fn new() -> io::Result<Config> {
+        // let buffer = fs::read_to_string("config.conf")?;
+        let buffer = if let Ok(buffer) = fs::read_to_string("config.conf") {
+            buffer
+        } else {
+            fs::write("config.conf", "token_here\nmusic_dir_path_here")?;
+            eprintln!("Please fill out the config.conf file and run the program again");
+            std::process::exit(1);
+        };
+
+        let mut lines = buffer.lines();
+
+        let token = lines.next().unwrap().to_string();
+        let music_dir = lines.next().unwrap().to_string();
+
+        let config = Config { token, music_dir };
+
+        Ok(config)
+    }
 }
 
 #[get("/sync")]
@@ -78,11 +106,13 @@ async fn sync_post(
 async fn main() -> io::Result<()> {
     println!("Starting server!");
 
+    let config = Config::new()?;
     let (file_names, file_entries) = utils::get_files()?;
 
     let state = Arc::new(RwLock::new(AppState {
         file_names,
         file_entries,
+        config,
     }));
 
     HttpServer::new(move || {
