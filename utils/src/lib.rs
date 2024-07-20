@@ -1,9 +1,38 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, fs, io};
 
 pub mod cbf;
 pub mod split_strings;
 
-pub fn join_hashset(set: &HashSet<&String>, separator: char) -> String {
+pub fn get_files() -> io::Result<(HashSet<String>, Vec<cbf::FileEntry>)> {
+    let path = if let Ok(path) = fs::read_dir("music") {
+        path
+    } else {
+        fs::create_dir("music")?;
+        fs::read_dir("music")?
+    };
+
+    let mut entries = Vec::new();
+    let mut file_names = HashSet::new();
+    for path in path {
+        let path = path?.path();
+        let file_name = path.file_name().unwrap().to_str().unwrap().to_string();
+
+        file_names.insert(file_name.clone());
+
+        let data = fs::read(path)?;
+        entries.push(cbf::FileEntry {
+            name: file_name,
+            data,
+        });
+    }
+
+    Ok((file_names, entries))
+}
+
+pub fn join_hashset<S>(set: &HashSet<S>, separator: char) -> String
+where
+    S: AsRef<str>,
+{
     let num_elements = set.len();
     if num_elements == 0 {
         return String::new();
@@ -11,19 +40,19 @@ pub fn join_hashset(set: &HashSet<&String>, separator: char) -> String {
 
     let separator_len = 1;
     let total_length: usize =
-        set.iter().map(|s| s.len()).sum::<usize>() + (num_elements - 1) * separator_len;
+        set.iter().map(|s| s.as_ref().len()).sum::<usize>() + (num_elements - 1) * separator_len;
 
     let mut joined = String::with_capacity(total_length);
 
     let mut set_iter = set.iter();
 
     if let Some(first) = set_iter.next() {
-        joined.push_str(first);
+        joined.push_str(first.as_ref());
     }
 
     for item in set_iter {
         joined.push(separator);
-        joined.push_str(item);
+        joined.push_str(item.as_ref());
     }
 
     joined
@@ -33,6 +62,23 @@ pub fn join_hashset(set: &HashSet<&String>, separator: char) -> String {
 mod tests {
     use super::*;
     use std::collections::HashSet;
+
+    #[test]
+    fn test_join_hashset() {
+        let set = ["file1", "file2", "file3"];
+        let set = set
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<HashSet<String>>();
+
+        let result = join_hashset(&set, '|');
+        let result_set = result.split('|').collect::<HashSet<&str>>();
+
+        // convert original set to a HashSet<&str> for comparison
+        let expected_set = set.iter().map(String::as_str).collect::<HashSet<&str>>();
+
+        assert_eq!(result_set, expected_set);
+    }
 
     #[test]
     fn test_write_read() {
