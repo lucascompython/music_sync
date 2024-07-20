@@ -8,6 +8,7 @@ lz4_flex = { version = "0.11.3", default-features = false }
 actix-web = "4"
 zstd = "0.13.2"
 utils = { path = "../utils" }
+mimalloc = "0.1.43"
 
 
 [profile.release]
