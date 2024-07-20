@@ -16,6 +16,11 @@ pub fn get_files(path: &str) -> io::Result<(HashSet<String>, Vec<cbf::FileEntry>
     let mut file_names = HashSet::new();
     for path in path {
         let path = path?.path();
+
+        if path.is_dir() {
+            continue;
+        }
+
         let file_name = path.file_name().unwrap().to_str().unwrap().to_string();
 
         file_names.insert(file_name.clone());
