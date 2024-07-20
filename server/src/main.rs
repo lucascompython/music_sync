@@ -17,6 +17,7 @@ struct AppState {
 struct Config {
     token: String,
     music_dir: String,
+    port: u16,
 }
 
 impl Config {
@@ -33,8 +34,17 @@ impl Config {
 
         let token = lines.next().expect("Missing token").to_string();
         let music_dir = lines.next().expect("Missing music_dir").to_string();
+        let port = lines
+            .next()
+            .expect("Missing port")
+            .parse()
+            .expect("Invalid port");
 
-        Ok(Self { token, music_dir })
+        Ok(Self {
+            token,
+            music_dir,
+            port,
+        })
     }
 }
 
@@ -123,9 +133,11 @@ async fn sync_post(
 
 #[actix_web::main]
 async fn main() -> io::Result<()> {
-    println!("Starting server!");
-
     let config = Config::new()?;
+    let port = config.port;
+
+    println!("Starting server on 0.0.0.0:{}!", port);
+
     let token_verifier = TokenVerifier::new(&config.token);
 
     let (file_names, file_entries) = utils::get_files(&config.music_dir)?;
@@ -144,7 +156,7 @@ async fn main() -> io::Result<()> {
             .service(sync_get)
             .service(sync_post)
     })
-    .bind(("127.0.0.1", 8080))?
+    .bind(("0.0.0.0", port))?
     .run()
     .await
 }
