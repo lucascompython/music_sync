@@ -84,3 +84,76 @@ fn read_n_bytes<R: Read>(reader: &mut R, n: usize) -> io::Result<Vec<u8>> {
     reader.read_exact(&mut buffer)?;
     Ok(buffer)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_write_read() {
+        let entries = vec![
+            FileEntry {
+                name: "file1.txt".to_string(),
+                data: b"Hello, world!".to_vec(),
+            },
+            FileEntry {
+                name: "file2.bin".to_string(),
+                data: vec![0x01, 0x02, 0x03, 0x04],
+            },
+        ];
+
+        let mut missing_files = HashSet::new();
+        missing_files.insert("file3.txt");
+        missing_files.insert("file4.bin");
+
+        let mut buffer = Vec::new();
+        write(&mut buffer, &entries, Some(&missing_files)).expect("Failed to write custom format");
+
+        let mut cursor = std::io::Cursor::new(buffer);
+        let (read_missing_files, read_entries) =
+            read(&mut cursor).expect("Failed to read custom format");
+
+        assert_eq!(entries.len(), read_entries.len());
+        assert_eq!(missing_files.len(), read_missing_files.len());
+
+        for ((entry, read_entry), (missing_file, read_missing_file)) in entries
+            .iter()
+            .zip(read_entries.iter())
+            .zip(missing_files.iter().zip(read_missing_files.iter()))
+        {
+            assert_eq!(entry.name, read_entry.name);
+            assert_eq!(entry.data, read_entry.data);
+            assert_eq!(missing_file, read_missing_file);
+        }
+    }
+
+    #[test]
+    fn test_write_read_no_missing_files() {
+        let entries = vec![
+            FileEntry {
+                name: "file1.txt".to_string(),
+                data: b"Hello, world!".to_vec(),
+            },
+            FileEntry {
+                name: "file2.bin".to_string(),
+                data: vec![0x01, 0x02, 0x03, 0x04],
+            },
+        ];
+
+        let mut buffer = Vec::new();
+        write(&mut buffer, &entries, None::<&HashSet<String>>)
+            .expect("Failed to write custom format");
+
+        let mut cursor = std::io::Cursor::new(buffer);
+        let (read_missing_files, read_entries) =
+            read(&mut cursor).expect("Failed to read custom format");
+
+        assert_eq!(entries.len(), read_entries.len());
+        assert_eq!(0, read_missing_files.len());
+
+        for (entry, read_entry) in entries.iter().zip(read_entries.iter()) {
+            assert_eq!(entry.name, read_entry.name);
+            assert_eq!(entry.data, read_entry.data);
+        }
+    }
+}

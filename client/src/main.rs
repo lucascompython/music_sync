@@ -3,7 +3,7 @@ use std::{
     fs,
     io::{self, Read},
 };
-use utils::{cbf, split_strings::SplitStrings};
+use utils::{cbf, encryption::TokenVerifier, split_strings::SplitStrings};
 
 struct Config {
     server_url: String,
@@ -46,13 +46,16 @@ impl Config {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::new()?;
 
-    let (file_names, file_entries) = utils::get_files()?;
+    let token_verifier = TokenVerifier::new(&config.token);
+    let encrypted_token = token_verifier.encrypt(config.token.as_bytes());
+
+    let (file_names, file_entries) = utils::get_files(&config.music_dir)?;
 
     let client = reqwest::blocking::Client::new();
 
     let response = client
-        .get(&format!("{}/sync", config.server_url))
-        .header("Authorization", &config.token)
+        .get(format!("{}/sync", config.server_url))
+        .header("Authorization", &encrypted_token)
         .body(utils::join_hashset(&file_names, '|'))
         .send()?;
 
@@ -83,8 +86,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     cbf::write(&mut buffer, &missing_files, None::<&HashSet<String>>)?;
 
                     let response = client
-                        .post(&format!("{}/sync", config.server_url))
-                        .header("Authorization", &config.token)
+                        .post(format!("{}/sync", config.server_url))
+                        .header("Authorization", &encrypted_token)
                         .body(buffer)
                         .send()?;
 
@@ -120,8 +123,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         cbf::write(&mut buffer, &missing_files, None::<&HashSet<String>>)?;
 
                         let response = client
-                            .post(&format!("{}/sync", config.server_url))
-                            .header("Authorization", &config.token)
+                            .post(format!("{}/sync", config.server_url))
+                            .header("Authorization", &encrypted_token)
                             .body(buffer)
                             .send()?;
 
@@ -136,6 +139,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
+    } else {
+        eprintln!("Failed to sync files!");
     }
 
     Ok(())

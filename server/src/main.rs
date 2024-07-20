@@ -4,14 +4,14 @@ use std::io;
 use std::sync::Arc;
 use std::sync::RwLock;
 
-use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
-use utils::cbf;
-use utils::split_strings::SplitStrings;
+use actix_web::{get, post, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
+use utils::{cbf, encryption::TokenVerifier, split_strings::SplitStrings};
 
 struct AppState {
     file_names: HashSet<String>,
     file_entries: Vec<cbf::FileEntry>,
     config: Config,
+    token_verifier: TokenVerifier,
 }
 
 struct Config {
@@ -21,7 +21,6 @@ struct Config {
 
 impl Config {
     fn new() -> io::Result<Config> {
-        // let buffer = fs::read_to_string("config.conf")?;
         let buffer = if let Ok(buffer) = fs::read_to_string("config.conf") {
             buffer
         } else {
@@ -41,9 +40,38 @@ impl Config {
     }
 }
 
+fn validate_token(req: &HttpRequest, token_verifier: &TokenVerifier) -> bool {
+    req.headers()
+        .get("Authorization")
+        .map_or(false, |header_value| {
+            header_value
+                .to_str()
+                .ok()
+                .and_then(|token| {
+                    token_verifier.decrypt(token).and_then(|decrypted_token| {
+                        if token_verifier.verify(&decrypted_token) {
+                            Some(true)
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .unwrap_or(false)
+        })
+}
+
 #[get("/sync")]
-async fn sync_get(state: web::Data<Arc<RwLock<AppState>>>, req_body: String) -> impl Responder {
+async fn sync_get(
+    state: web::Data<Arc<RwLock<AppState>>>,
+    req_body: String,
+    req: HttpRequest,
+) -> impl Responder {
     let state = state.read().unwrap();
+
+    if !validate_token(&req, &state.token_verifier) {
+        return HttpResponse::Unauthorized().finish();
+    }
+
     let files = &state.file_names;
 
     if req_body.is_empty() {
@@ -57,7 +85,7 @@ async fn sync_get(state: web::Data<Arc<RwLock<AppState>>>, req_body: String) -> 
 
     let incoming_files: HashSet<String> = SplitStrings::new(&req_body, '|').collect();
 
-    let missing: HashSet<&String> = incoming_files.difference(&files).collect(); // files that are in the client's request but not in the server's files
+    let missing: HashSet<&String> = incoming_files.difference(files).collect(); // files that are in the client's request but not in the server's files
     let extra: HashSet<&String> = files.difference(&incoming_files).collect(); // files that are in the server's files but not in the client's request
 
     if !extra.is_empty() {
@@ -87,14 +115,25 @@ async fn sync_get(state: web::Data<Arc<RwLock<AppState>>>, req_body: String) -> 
 async fn sync_post(
     state: web::Data<Arc<RwLock<AppState>>>,
     req_body: web::Bytes,
+    req: HttpRequest,
 ) -> impl Responder {
+    let mut state = state.write().unwrap();
+
+    if !validate_token(&req, &state.token_verifier) {
+        return HttpResponse::Unauthorized().finish();
+    }
+
     let mut cursor = std::io::Cursor::new(req_body.as_ref());
 
     let (_, entries) = cbf::read(&mut cursor).unwrap();
 
-    let mut state = state.write().unwrap();
     for entry in entries {
-        fs::write(format!("music/{}", entry.name), &entry.data).unwrap();
+        fs::write(
+            format!("{}/{}", state.config.music_dir, entry.name),
+            &entry.data,
+        )
+        .unwrap();
+
         state.file_names.insert(entry.name.clone());
         state.file_entries.push(entry);
     }
@@ -107,12 +146,15 @@ async fn main() -> io::Result<()> {
     println!("Starting server!");
 
     let config = Config::new()?;
-    let (file_names, file_entries) = utils::get_files()?;
+    let token_verifier = TokenVerifier::new(&config.token);
+
+    let (file_names, file_entries) = utils::get_files(&config.music_dir)?;
 
     let state = Arc::new(RwLock::new(AppState {
         file_names,
         file_entries,
         config,
+        token_verifier,
     }));
 
     HttpServer::new(move || {
