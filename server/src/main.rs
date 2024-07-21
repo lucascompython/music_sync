@@ -30,7 +30,7 @@ impl Config {
         let buffer = if let Ok(buffer) = fs::read_to_string("config.conf") {
             buffer
         } else {
-            fs::write("config.conf", "token_here\nmusic_dir_path_here")?;
+            fs::write("config.conf", "token_here\nmusic_dir_path_here\nport_here")?;
             eprintln!("Please fill out the config.conf file and run the program again");
             std::process::exit(1);
         };
