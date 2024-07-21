@@ -1,12 +1,14 @@
 use mimalloc::MiMalloc;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs,
     io::{self, Read},
+    sync::Arc,
 };
 use utils::{cbf, encryption::TokenVerifier, split_strings::SplitStrings};
 
@@ -43,7 +45,7 @@ impl Config {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = Config::new()?;
+    let config = Arc::new(Config::new()?);
 
     let token_verifier = TokenVerifier::new(&config.token);
     let encrypted_token = token_verifier.encrypt(config.token.as_bytes());
@@ -80,18 +82,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("The server is missing {} files", missing_files.len());
                 println!("The client is missing {} files", entries.len());
 
-                for entry in entries {
-                    fs::write(format!("{}/{}", config.music_dir, entry.name), entry.data)?;
-                }
+                let config_clone = config.clone();
 
-                if !missing_files.is_empty() {
-                    sync_missing_files(
-                        &client,
-                        &config,
-                        &encrypted_token,
-                        &file_entries,
-                        &missing_files,
-                    )?;
+                let network_thead = if !missing_files.is_empty() {
+                    Some(std::thread::spawn(move || {
+                        sync_missing_files(
+                            &client,
+                            &config_clone,
+                            &encrypted_token,
+                            &file_entries,
+                            &missing_files,
+                        )
+                        .expect("Failed to sync missing files!");
+                    }))
+                } else {
+                    None
+                };
+
+                entries.into_par_iter().for_each(|(name, data)| {
+                    fs::write(format!("{}/{}", config.music_dir, name), data).unwrap();
+                });
+
+                if let Some(network_thead) = network_thead {
+                    network_thead.join().unwrap();
                 }
             }
             None => {
@@ -130,15 +143,17 @@ fn sync_missing_files(
     client: &reqwest::blocking::Client,
     config: &Config,
     encrypted_token: &str,
-    file_entries: &[cbf::FileEntry],
+    file_entries: &cbf::FileEntries,
     missing_files: &HashSet<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let missing_files: Vec<&cbf::FileEntry> = file_entries
+    let missing_files = missing_files
         .iter()
-        .filter(|entry| missing_files.contains(&entry.name))
-        .collect();
+        .map(|name| (name, file_entries.get(name).unwrap()))
+        .collect::<HashMap<_, _>>();
+
     let mut buffer = Vec::new();
-    cbf::write(&mut buffer, &missing_files, None::<&HashSet<String>>)?;
+    cbf::write(&mut buffer, &missing_files, None::<&HashSet<&String>>)?;
+
     let response = client
         .post(format!("{}/sync", config.server_url))
         .header("Authorization", encrypted_token)
@@ -149,5 +164,6 @@ fn sync_missing_files(
     } else {
         eprintln!("Failed to sync missing files!");
     }
+
     Ok(())
 }

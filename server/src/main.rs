@@ -3,6 +3,7 @@ use mimalloc::MiMalloc;
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fs;
 use std::io;
@@ -14,7 +15,7 @@ use utils::{cbf, encryption::TokenVerifier, split_strings::SplitStrings};
 
 struct AppState {
     file_names: HashSet<String>,
-    file_entries: Vec<cbf::FileEntry>,
+    file_entries: cbf::FileEntries,
     config: Config,
     token_verifier: TokenVerifier,
 }
@@ -78,17 +79,15 @@ async fn sync_get(
         return HttpResponse::Unauthorized().finish();
     }
 
-    let files = &state.file_names;
     let incoming_files: HashSet<String> = SplitStrings::new(&req_body, '|').collect();
-    let missing: HashSet<&String> = incoming_files.difference(files).collect(); // files that are in the client's request but not in the server's files
-    let extra: HashSet<&String> = files.difference(&incoming_files).collect(); // files that are in the server's files but not in the client's request
+    let missing: HashSet<&String> = incoming_files.difference(&state.file_names).collect(); // files that are in the client's request but not in the server's files
+    let extra: HashSet<&String> = state.file_names.difference(&incoming_files).collect(); // files that are in the server's files but not in the client's request
 
     if !extra.is_empty() {
-        let extra_files: Vec<&cbf::FileEntry> = state
-            .file_entries
+        let extra_files = extra
             .iter()
-            .filter(|entry| extra.contains(&entry.name))
-            .collect();
+            .map(|name| (*name, state.file_entries.get(*name).unwrap()))
+            .collect::<HashMap<_, _>>();
 
         let mut buffer = Vec::new();
         cbf::write(&mut buffer, &extra_files, Some(&missing)).unwrap();
@@ -122,15 +121,11 @@ async fn sync_post(
 
     let (_, entries) = cbf::read(&mut cursor).unwrap();
 
-    for entry in entries {
-        fs::write(
-            format!("{}/{}", state.config.music_dir, entry.name),
-            &entry.data,
-        )
-        .unwrap();
+    for (name, data) in entries.into_iter() {
+        fs::write(format!("{}/{}", state.config.music_dir, name), &data).unwrap();
 
-        state.file_names.insert(entry.name.clone());
-        state.file_entries.push(entry);
+        state.file_names.insert(name.clone());
+        state.file_entries.insert(name, data);
     }
 
     HttpResponse::Ok().body("synced")

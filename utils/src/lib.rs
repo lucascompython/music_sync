@@ -4,7 +4,7 @@ pub mod cbf;
 pub mod encryption;
 pub mod split_strings;
 
-pub fn get_files(path: &str) -> io::Result<(HashSet<String>, Vec<cbf::FileEntry>)> {
+pub fn get_files(path: &str) -> io::Result<(HashSet<String>, cbf::FileEntries)> {
     let path = if let Ok(path) = fs::read_dir(path) {
         path
     } else {
@@ -12,7 +12,7 @@ pub fn get_files(path: &str) -> io::Result<(HashSet<String>, Vec<cbf::FileEntry>
         fs::read_dir(path)?
     };
 
-    let mut entries = Vec::new();
+    let mut entries = cbf::FileEntries::new();
     let mut file_names = HashSet::new();
     for path in path {
         let path = path?.path();
@@ -26,10 +26,7 @@ pub fn get_files(path: &str) -> io::Result<(HashSet<String>, Vec<cbf::FileEntry>
         file_names.insert(file_name.clone());
 
         let data = fs::read(path)?;
-        entries.push(cbf::FileEntry {
-            name: file_name,
-            data,
-        });
+        entries.insert(file_name, data);
     }
 
     Ok((file_names, entries))
