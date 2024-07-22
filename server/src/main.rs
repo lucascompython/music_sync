@@ -1,3 +1,5 @@
+use futures::stream::FuturesUnordered;
+use futures::StreamExt;
 use mimalloc::MiMalloc;
 
 #[global_allocator]
@@ -8,9 +10,9 @@ use std::collections::HashSet;
 use std::fs;
 use std::io;
 use std::sync::Arc;
-use std::sync::RwLock;
 
 use actix_web::{get, post, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
+use tokio::sync::RwLock;
 use utils::{cbf, encryption::TokenVerifier, split_strings::SplitStrings};
 
 struct AppState {
@@ -73,7 +75,7 @@ async fn sync_get(
     req_body: String,
     req: HttpRequest,
 ) -> impl Responder {
-    let state = state.read().unwrap();
+    let state = state.read().await;
 
     if !validate_token(&req, &state.token_verifier) {
         return HttpResponse::Unauthorized().finish();
@@ -111,22 +113,40 @@ async fn sync_post(
     req_body: web::Bytes,
     req: HttpRequest,
 ) -> impl Responder {
-    let mut state = state.write().unwrap();
-
-    if !validate_token(&req, &state.token_verifier) {
+    if !validate_token(&req, &state.read().await.token_verifier) {
         return HttpResponse::Unauthorized().finish();
     }
 
-    let mut cursor = std::io::Cursor::new(req_body.as_ref());
+    actix_web::rt::spawn(async move {
+        let mut cursor = std::io::Cursor::new(req_body.as_ref());
 
-    let (_, entries) = cbf::read(&mut cursor).unwrap();
+        let (_, entries) = cbf::read(&mut cursor).unwrap();
 
-    for (name, data) in entries.into_iter() {
-        fs::write(format!("{}/{}", state.config.music_dir, name), &data).unwrap();
+        let mut write_tasks = FuturesUnordered::new();
 
-        state.file_names.insert(name.clone());
-        state.file_entries.insert(name, data);
-    }
+        // acquiring this lock here could be a bottleneck if it takes a long time to write the files and there are many requests
+        // but at the same time, we don't want to acquire the lock for each file write
+        // for my use case, this is fine
+        let mut state = state.write().await;
+
+        let music_dir = state.config.music_dir.clone();
+
+        for (name, data) in entries.into_iter() {
+            // do this to avoid cloning the data
+            let data_ptr = std::ptr::NonNull::new(&data as *const Vec<u8> as *mut Vec<u8>).unwrap();
+            let data_ref = unsafe { &*data_ptr.as_ptr() };
+
+            let music_dir = format!("{}/{}", music_dir, &name);
+            let write_future = tokio::fs::write(music_dir, data_ref);
+
+            state.file_names.insert(name.clone());
+            state.file_entries.insert(name, data);
+
+            write_tasks.push(write_future);
+        }
+
+        while (write_tasks.next().await).is_some() {}
+    });
 
     HttpResponse::Ok().body("synced")
 }
