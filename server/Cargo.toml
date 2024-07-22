@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-futures = { version = "0.3" }
+futures = { version = "0.3", default-features = false, features = ["std"] }
 lz4_flex = { version = "0.11.3", default-features = false }
 actix-web = "4"
 zstd = "0.13.2"
