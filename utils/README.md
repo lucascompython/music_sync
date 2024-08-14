@@ -4,9 +4,14 @@
 
 Well it's simple, the file structure is as follows:
 
+### Main Header
+
 - missing files size (2 bytes)
 - missing file name size (1 byte) - if missing files size is 0 then this is not present
 - missing file name (missing file name size bytes) - same as above
+
+### For each file
+
 - file size (4 bytes)
 - file name size (1 byte)
 - file name (file name size bytes)
